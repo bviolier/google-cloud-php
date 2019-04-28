@@ -106,8 +106,16 @@ class BigtableClient
      */
     public function __construct(array $config = [])
     {
+        $config['emulatorHost'] = getenv('BIGTABLE_EMULATOR_HOST');
+        $config['hasEmulator'] = (bool) $config['emulatorHost'];
+
         if (!isset($config['transportConfig']['grpc']['stubOpts'])) {
             $config['transportConfig']['grpc']['stubOpts'] = [];
+        }
+
+        if ($config['hasEmulator']) {
+            $config['serviceAddress'] = $config['emulatorHost'];
+            $config['transportConfig']['grpc']['stubOpts']['credentials'] = \Grpc\ChannelCredentials::createInsecure();
         }
 
         // Workaround for large messages.
@@ -117,7 +125,7 @@ class BigtableClient
         ];
 
         $this->projectId = $this->pluck('projectId', $config, false)
-            ?: $this->detectProjectId();
+            ?: $this->detectProjectId($config);
         $this->gapicClient = new GapicClient($config);
     }
 
@@ -153,11 +161,13 @@ class BigtableClient
     /**
      * Attempts to detect the project ID.
      *
+     * @param array $config
+     *
      * @todo Add better support for detecting the project ID (check keyFile/GCE metadata server).
      * @return string
      * @throws ValidationException If a project ID cannot be detected.
      */
-    private function detectProjectId()
+    private function detectProjectId(array $config)
     {
         if (getenv('GOOGLE_CLOUD_PROJECT')) {
             return getenv('GOOGLE_CLOUD_PROJECT');
@@ -165,6 +175,10 @@ class BigtableClient
 
         if (getenv('GCLOUD_PROJECT')) {
             return getenv('GCLOUD_PROJECT');
+        }
+
+        if ($config['hasEmulator']) {
+            return 'emulator-project';
         }
 
         throw new ValidationException(
